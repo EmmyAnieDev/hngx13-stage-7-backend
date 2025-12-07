@@ -1,6 +1,4 @@
-import os
 import logging
-from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -10,11 +8,10 @@ from app.models import Document
 from app.schemas import DocumentUploadResponse, DocumentAnalysisResponse, DocumentResponse
 from app.services.document_service import DocumentService
 from app.services.llm_service import LLMService
+from app.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -35,29 +32,30 @@ async def upload_document(
     if file_size > max_size:
         raise HTTPException(status_code=400, detail=f"File size exceeds {settings.max_file_size_mb}MB limit")
 
-    file_path = os.path.join(settings.upload_dir, f"{datetime.now().timestamp()}_{file.filename}")
-    
+    object_name = f"{datetime.now().timestamp()}_{file.filename}"
+
     try:
-        with open(file_path, "wb") as f:
-            f.write(content)
+        StorageService.upload_file(content, object_name)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to save file {file.filename}: {str(e)}")
+        logger.error(f"Failed to upload file {file.filename}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to save uploaded file")
 
     try:
-        extracted_text = DocumentService.extract_text(file_path, file.content_type)
+        extracted_text = DocumentService.extract_text_from_bytes(content, file.content_type)
     except ValueError as e:
-        os.remove(file_path)
+        StorageService.delete_file(object_name)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error extracting text from {file.filename}: {str(e)}")
-        os.remove(file_path)
+        StorageService.delete_file(object_name)
         raise HTTPException(status_code=500, detail="Failed to process document")
 
     try:
         document = Document(
             filename=file.filename,
-            file_path=file_path,
+            file_path=object_name,
             file_size=file_size,
             file_type=file.content_type,
             extracted_text=extracted_text
@@ -67,7 +65,7 @@ async def upload_document(
         db.refresh(document)
     except Exception as e:
         logger.error(f"Database error saving document {file.filename}: {str(e)}")
-        os.remove(file_path)
+        StorageService.delete_file(object_name)
         raise HTTPException(status_code=500, detail="Failed to save document information")
 
     return DocumentUploadResponse(
