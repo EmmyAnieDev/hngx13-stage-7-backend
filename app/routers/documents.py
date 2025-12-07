@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -80,7 +81,7 @@ async def upload_document(
 
 @router.post("/{document_id}/analyze", response_model=DocumentAnalysisResponse)
 async def analyze_document(
-    document_id: int,
+    document_id: UUID,
     db: Session = Depends(get_db)
 ):
     """Analyze document using LLM and extract metadata."""
@@ -124,7 +125,7 @@ async def analyze_document(
 
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
-    document_id: int,
+    document_id: UUID,
     db: Session = Depends(get_db)
 ):
     """Get complete document information including analysis results."""

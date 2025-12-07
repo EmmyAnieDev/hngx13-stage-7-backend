@@ -10,3 +10,5 @@ python-docx==1.1.0
 httpx==0.26.0
 python-dotenv==1.0.0
 minio==7.2.3
+uuid6==2024.1.12
+alembic==1.13.1

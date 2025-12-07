@@ -1,10 +1,11 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, Dict, Any
+from uuid import UUID
 
 
 class DocumentUploadResponse(BaseModel):
-    id: int
+    id: UUID
     filename: str
     file_size: int
     file_type: str
@@ -16,7 +17,7 @@ class DocumentUploadResponse(BaseModel):
 
 
 class DocumentAnalysisResponse(BaseModel):
-    id: int
+    id: UUID
     summary: str
     document_type: str
     metadata: Dict[str, Any]
@@ -27,7 +28,7 @@ class DocumentAnalysisResponse(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-    id: int
+    id: UUID
     filename: str
     file_size: int
     file_type: str
