@@ -13,10 +13,9 @@ class Document(Base):
     file_type = Column(String, nullable=False)
     extracted_text = Column(Text)
 
-    # LLM Analysis Results
     summary = Column(Text)
     document_type = Column(String)
-    metadata = Column(JSON)
+    extracted_metadata = Column(JSON)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     analyzed_at = Column(DateTime(timezone=True))

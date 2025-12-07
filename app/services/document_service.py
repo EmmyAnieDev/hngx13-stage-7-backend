@@ -1,7 +1,8 @@
-import os
-from pathlib import Path
+import logging
 from pypdf import PdfReader
 from docx import Document as DocxDocument
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentService:
@@ -15,7 +16,8 @@ class DocumentService:
                 text.append(page.extract_text())
             return "\n\n".join(text)
         except Exception as e:
-            raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+            logger.error(f"PDF extraction failed for {file_path}: {str(e)}")
+            raise ValueError("Failed to extract text from PDF file")
 
     @staticmethod
     def extract_text_from_docx(file_path: str) -> str:
@@ -28,7 +30,8 @@ class DocumentService:
                     text.append(paragraph.text)
             return "\n\n".join(text)
         except Exception as e:
-            raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
+            logger.error(f"DOCX extraction failed for {file_path}: {str(e)}")
+            raise ValueError("Failed to extract text from DOCX file")
 
     @staticmethod
     def extract_text(file_path: str, file_type: str) -> str:

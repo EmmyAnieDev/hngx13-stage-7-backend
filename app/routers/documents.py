@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
@@ -10,9 +11,9 @@ from app.schemas import DocumentUploadResponse, DocumentAnalysisResponse, Docume
 from app.services.document_service import DocumentService
 from app.services.llm_service import LLMService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Ensure upload directory exists
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 
 
@@ -23,43 +24,51 @@ async def upload_document(
 ):
     """Upload a PDF or DOCX file, extract text, and save to database."""
 
-    # Validate file type
     allowed_types = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
 
-    # Read file content
     content = await file.read()
     file_size = len(content)
 
-    # Validate file size (5MB max)
     max_size = settings.max_file_size_mb * 1024 * 1024
     if file_size > max_size:
         raise HTTPException(status_code=400, detail=f"File size exceeds {settings.max_file_size_mb}MB limit")
 
-    # Save file to disk
     file_path = os.path.join(settings.upload_dir, f"{datetime.now().timestamp()}_{file.filename}")
-    with open(file_path, "wb") as f:
-        f.write(content)
+    
+    try:
+        with open(file_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        logger.error(f"Failed to save file {file.filename}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file")
 
-    # Extract text
     try:
         extracted_text = DocumentService.extract_text(file_path, file.content_type)
-    except Exception as e:
+    except ValueError as e:
         os.remove(file_path)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error extracting text from {file.filename}: {str(e)}")
+        os.remove(file_path)
+        raise HTTPException(status_code=500, detail="Failed to process document")
 
-    # Save to database
-    document = Document(
-        filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        file_type=file.content_type,
-        extracted_text=extracted_text
-    )
-    db.add(document)
-    db.commit()
-    db.refresh(document)
+    try:
+        document = Document(
+            filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            file_type=file.content_type,
+            extracted_text=extracted_text
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+    except Exception as e:
+        logger.error(f"Database error saving document {file.filename}: {str(e)}")
+        os.remove(file_path)
+        raise HTTPException(status_code=500, detail="Failed to save document information")
 
     return DocumentUploadResponse(
         id=document.id,
@@ -85,26 +94,32 @@ async def analyze_document(
     if not document.extracted_text:
         raise HTTPException(status_code=400, detail="No extracted text available")
 
-    # Analyze with LLM
     try:
         analysis = await LLMService.analyze_document(document.extracted_text)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Unexpected error analyzing document {document_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Document analysis failed")
 
-    # Update document with analysis results
-    document.summary = analysis["summary"]
-    document.document_type = analysis["document_type"]
-    document.metadata = analysis["metadata"]
-    document.analyzed_at = datetime.now()
+    try:
+        document.summary = analysis["summary"]
+        document.document_type = analysis["document_type"]
+        document.extracted_metadata = analysis["metadata"]
+        document.analyzed_at = datetime.now()
 
-    db.commit()
-    db.refresh(document)
+        db.commit()
+        db.refresh(document)
+    except Exception as e:
+        logger.error(f"Database error saving analysis for document {document_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save analysis results")
 
     return DocumentAnalysisResponse(
         id=document.id,
         summary=document.summary,
         document_type=document.document_type,
-        metadata=document.metadata,
+        metadata=document.extracted_metadata,
         analyzed_at=document.analyzed_at
     )
 
@@ -128,7 +143,7 @@ async def get_document(
         extracted_text=document.extracted_text,
         summary=document.summary,
         document_type=document.document_type,
-        metadata=document.metadata,
+        metadata=document.extracted_metadata,
         created_at=document.created_at,
         analyzed_at=document.analyzed_at
     )

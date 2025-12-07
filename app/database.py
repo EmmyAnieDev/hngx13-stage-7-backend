@@ -7,6 +7,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     database_url: str
+    openrouter_uri: str = "https://openrouter.ai/api/v1/chat/completions"
     openrouter_api_key: str
     openrouter_model: str = "openai/gpt-4o-mini"
     upload_dir: str = "./uploads"
